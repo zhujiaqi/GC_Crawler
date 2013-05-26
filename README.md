@@ -7,7 +7,8 @@ Repository: *github/zhujiaqi/GC_Crawler*
 Requirements:
 
 - Python 2.7
-- sqlite3
+- Sqlite3
+- Gmail account (optional)
 
 Installation:
 
@@ -27,10 +28,8 @@ However, you are welcome to make it better, some nice to have improvements:
 
 1. Kill the captcha and make the login part working. (So you can see & save images)
 
-2. Option to dump the DB.
+2. Option for dumping the DB.
 
 3. Daemon process to run this remotely and by demands. 
 
-4. Email the results to designated addresses.
-
-5. ...
+4. ...

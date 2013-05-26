@@ -10,7 +10,8 @@ Repository: github/zhujiaqi/GC_Crawler
 
 Requirements:
 1. Python 2.7
-2. sqlite3
+2. Sqlite3
+3. Gmail account (optional)
 
 Installation:
 1. initialize gc.db
@@ -25,20 +26,25 @@ You are free to use this code snipplet as long as its not for commercial propose
 It comes with absolutely no guarantee so if anything didn't work as expected, bail out. (or fix it)
 However, you are welcome to make it better, some nice to have improvements:
 1. Kill the captcha and make the login part working. (So you can see & save images)
-2. Option to dump the DB.
+2. Options for dumping the DB.
 3. Daemon process to run this remotely and by demands. 
-4. Email the results to designated addresses.
-...
+4. ...
 
 '''
 
 '''start: configurations'''
 
-username = 'your gc username' #login username
-password = 'your gc password' #login password
-PAGE_TOTAL = 5 #number of pages you'd like to craw for each forums
+DEBUG = False
+USERNAME = 'your gc username' #login username
+PASSWORD = 'your gc password' #login password
+PAGE_TOTAL = 10 #number of pages you'd like to craw for each forums
 FORUM_IDS = [102, 105] #id for which forums you'd like to craw
-DEBUG = True
+MAIL_CONFIG = {
+    'enabled': True,
+    'sender': 'you@gmail.com',
+    'password': 'password',
+    'recipients': ['me@gmail.com'],
+}
 
 '''end: configurations'''
 
@@ -53,6 +59,35 @@ import sys
 import sqlite3
 import hashlib
 import httplib
+import zipfile
+import smtplib
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
+from email.header import Header
+from email.mime.base import MIMEBase
+from email import encoders
+
+def send_gmail(email_config, filename, subject='GC Crawler Test Email', text=u'Attachment'):
+    msg = MIMEMultipart()
+    part1 = MIMEText(text.encode('utf-8'), 'plain', _charset='utf-8')
+    msg.attach(part1)
+    msg['Subject'] = Header(subject, 'utf-8')
+    msg['From'] = str(Header('GC Crawler', 'utf-8')) + ' <%s>' % email_config['sender']
+    for email in email_config['recipients']:
+        msg.add_header('To', email)
+
+    attachment = MIMEBase('application', 'zip')
+    zf = open(filename, 'rb')
+    attachment.set_payload(zf.read())
+    zf.close()
+    encoders.encode_base64(attachment)
+    attachment.add_header('Content-Disposition','attachment;filename="%s"' % filename)
+    msg.attach(attachment)
+    session = smtplib.SMTP('smtp.gmail.com', 587)
+    session.starttls()
+    session.login(email_config['sender'], email_config['password'])
+    session.sendmail(email_config['sender'], email_config['recipients'], msg.as_string())
+    session.quit()
 
 def md5sum(t):
     return hashlib.md5(t).hexdigest()
@@ -81,7 +116,7 @@ login_page = "http://bbs.guitarchina.com/logging.php?action=login"
 lpc = urllib.urlopen(login_page).read()
 
 if DEBUG:
-    with open('temp1.html','w') as f:
+    with open('login_page.html','w') as f:
         f.write(lpc)
     
 login_page += '&loginsubmit=true'
@@ -98,8 +133,8 @@ opener.addheaders = [('User-agent','Mozilla/4.0 (compatible; MSIE 6.0; Windows N
 data = urllib.urlencode(
     {
         "loginfield": 'username',
-        "username": username,
-        "password": password,
+        "username": USERNAME,
+        "password": PASSWORD,
         "cookietime": "2592000",
         "formhash": formhash,
         "userlogin": 'true',
@@ -119,8 +154,8 @@ data = urllib.urlencode(
     # f.write(r)
     
 # ==========
-
 items = []
+filenames = []
 for i in FORUM_IDS:
     for j in range(1, PAGE_TOTAL+1):
         link = forum % (str(i), j)
@@ -161,6 +196,7 @@ for i in FORUM_IDS:
             items.append(match)
             with open('contents/' + match[0], 'w') as inner_f:
                 inner_f.write(inner_page_content)
+            filenames.append('contents/' + match[0])
                 
             newtext = md5sum(inner_page_content)
             item_in_db = cur.execute("select * from items where url == ?", (match[0],)).fetchone()
@@ -173,10 +209,20 @@ for i in FORUM_IDS:
             else:   
                 cur.execute("insert into items values(null,?,?)", (match[0], newtext))
                 
-with open('test_result_%s_%d.html' % (str(datetime.date.today()), int(time.time())), 'w') as tf:
+stamp = '%s_%d' % (str(datetime.date.today()), int(time.time()))
+with open('test_result_%s.html' % stamp, 'w') as tf:
     tf.write('<html>')
     for item in items:
         tf.write('<div style="margin-top:10px;"><a href="contents/%s">%s</a>&nbsp;&nbsp;<a target="_blank" href="http://bbs.guitarchina.com/%s">[Original]</a></div>' % (item[0], item[1], item[0]))
         
     tf.write('</html>')
+filenames.append('test_result_%s.html' % stamp)
     
+with zipfile.ZipFile('%s.zip' % stamp, 'w') as myzip:
+    for fn in filenames:
+        myzip.write(fn)
+        if DEBUG:
+            print fn, 'added to zip'
+
+if MAIL_CONFIG['enabled']:
+    send_gmail(MAIL_CONFIG, '%s.zip' % stamp, 'GC Crawler %s' % stamp)
